@@ -1,0 +1,465 @@
+---
+title: "S5 Survey Preprocessing"
+author: "Ian Hajnosz"
+date: "2023-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+We have 4 surveys to merge here: Baseline, Manipulation (x2), and a Post-Discussion
+There are a number of complications to address, first of which being that the Post-Discussion was administered several times (x2) for each person (and due to some completion errors, some might even have more). 
+
+On that note, secondly there are some incomplete/completion error surveys in the manipulation (e.g. a person who skipped the video by accident and had to redo the survey): check for completion time, session log, and unimodal answers to catch these. 
+
+Thirdly, there should be some consistency of ids throughout--i.e. only those who did in lab surveys matter from the baseline (not everyone who completed baseline moved into the lab sessions).
+
+Fourth, relatedly, make sure the ids are recorded correctly so that those ID joining works. There should be notes in the session log for some (most, if not all corrected already I think), but some might have happened outwith researcher oversight--check for these too.
+
+Ultimately should be able to check final df with final number of participants; 76 couples completed, so maximum 152rows per dataset, 304per post discussion survey
+## Loading helpful packages
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(readr)
+```
+
+
+## Loading in Data
+
+```{r}
+df_Base <- read_csv("Data/S5+Baseline_March+23,+2023_11.40.csv")
+df_Cont <- read_csv("Data/S5+Cont+Lab+PRE-Discussion_March+23,+2023_11.39.csv")
+df_KM <- read_csv("Data/S5+KM+Lab+PRE-Discussion_March+23,+2023_11.40.csv")
+df_Post <- read_csv("Data/S5+Lab+POST-Discussion_March+23,+2023_11.39.csv")
+```
+
+# High level organization
+
+Checking for ID consistency (i.e. people switching or incorrectly marking their survey ids)
+```{r}
+### cIDs
+table(df_Base$IDs_1) #all 2000s, except for dummy 9999, check 2009, 2031, 2049, 2079, 2090, 2093, 2101, 2107, 2125, 2157
+#2009, log shows only 1 member of couple completed
+#2031, pID 1061 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#2049,both opened survey twice, both completed once (couples' incompletes will get removed during filtering of incompletes)
+#2079, pID 1157 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#2090,log shows only 1 member of couple completed
+#2093, pID 1185 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#2101, opened but incomplete survey. Log shows couple 2101 did not ever complete
+#2107, pID 1214 opened survey three times, completing once (other will get removed during filtering of incompletes)
+#2125, pID 1250 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#2157, pID 1313 opened survey twice, completing once (other will get removed during filtering of incompletes)
+
+df_Base %>% 
+  select(c(IDs_1, IDs_2)) %>% view()
+
+#===================
+
+table(df_Cont$IDs_1) #all 2000s, except for dummy 2999, check 2098
+#2098, looks like an accurate record of a repeat, will get cleaned by duration
+
+df_Cont %>% 
+  select(c(IDs_1, IDs_2)) %>% view()
+
+#===================
+
+table(df_KM$IDs_1) #check 1114, 1200, 1407, 2057, 2134, 2143, 2200, 2204
+#1114, id switch-up: 
+df_KM$IDs_1[df_KM$ResponseId == "R_1DROw0vfNpWXe27"] <- 2057
+df_KM$IDs_2[df_KM$ResponseId == "R_1DROw0vfNpWXe27"] <- 1114
+
+#1200, Typo: Should be cID 2200, pID is correctly 1399 (checked via survey log and survey entry date) 
+df_KM$IDs_1[df_KM$ResponseId == "R_eXxEZrjTOfkBWi5"] <- 2200
+
+#1407, id switch-up (also had to retake survey, but should show in survey duration/timers too--cleaned later)
+df_KM$IDs_1[df_KM$ResponseId == "R_2P4DrnJ38VFd9cz"] <- 2204
+df_KM$IDs_2[df_KM$ResponseId == "R_2P4DrnJ38VFd9cz"] <- 1407
+df_KM$IDs_1[df_KM$ResponseId == "R_1QnkNNQKEuk49Mw"] <- 2204
+df_KM$IDs_2[df_KM$ResponseId == "R_1QnkNNQKEuk49Mw"] <- 1407
+
+#2057, resolved with 1114
+
+#2134, looks like a switched ID: Should be 2143 (according to their pID and survey time)
+df_KM$IDs_1[df_KM$ResponseId == "R_XuLlL0woxUepxaV"] <- 2143
+
+#2143, resolved with 2134
+
+#2200, resolved with 2200
+
+#2204, resolved with 1407, 
+table(df_KM$IDs_1) #2204 has a repeat, though that will be cleaned with duration--otherwise it's an accurate record
+
+df_KM %>% 
+  select(c(IDs_1, IDs_2)) %>% view()
+#2215, Typo: Should be 2115. They ALSO have a pID error here too
+df_KM$IDs_1[df_KM$ResponseId == "R_2frMhxpzBnLauMf"] <- 2115
+df_KM$IDs_1[df_KM$ResponseId == "R_2pLSi9JePG9NvHM"] <- 2115
+df_KM$IDs_2[df_KM$ResponseId == "R_2frMhxpzBnLauMf"] <- 1229
+
+
+#=============================
+
+table(df_Post$IDs_1) #check 1200, 2048, 2084, 2131, 2132, 2200
+#1200, Typo: Should be cID 2200, pID 1399 (checked via survey log and survey entry date) 
+df_Post$IDs_1[df_Post$ResponseId == "R_27xLs6OwcZhXyAG"] <- 2200
+df_Post$IDs_1[df_Post$ResponseId == "R_1IaznILFJasmdvX"] <- 2200
+
+#2048, pIDs 1167 and 1168 made typo--should have cID of 2084
+df_Post$IDs_1[df_Post$ResponseId == "R_12m1v76pNyS55De"] <- 2084
+df_Post$IDs_1[df_Post$ResponseId == "R_aXFDI5IJrupWg8h"] <- 2084
+
+#2084, resolved with 2048
+
+#2131, pID 1263 accidentally used 2131--should be 2132 
+df_Post$IDs_1[df_Post$ResponseId == "R_2CZiLuOGNOLB0gM"] <- 2132
+
+#2200,resolved with 1200
+
+df_Post %>% 
+  select(c(IDs_1, IDs_2)) %>% view() #check 2215
+#2215, Typo: Should be 2115. They ALSO have a pID error here too
+df_Post$IDs_1[df_Post$ResponseId == "R_2uR5LT8o0H3xHxA"] <- 2115
+df_Post$IDs_1[df_Post$ResponseId == "R_1ptyBbH0ftEkwgK"] <- 2115
+df_Post$IDs_1[df_Post$ResponseId == "R_21dHzIrtJJmKZL7"] <- 2115
+df_Post$IDs_1[df_Post$ResponseId == "R_bji5yIuiJzx0E81"] <- 2115
+
+df_Post$IDs_2[df_Post$ResponseId == "R_1ptyBbH0ftEkwgK"] <- 1229
+df_Post$IDs_2[df_Post$ResponseId == "R_bji5yIuiJzx0E81"] <- 1229
+```
+
+
+
+```{r}
+### pIDs
+table(df_Base$IDs_2) #all 1000s, except dummy 9999, check 1250, 1097, 1098, 1214, 1061, 1313, 1185, 
+#1250, opened twice survey (incomplete will get removed during filtering of incompletes)
+#1097/1098, opened twice survey (incomplete will get removed during filtering of incompletes)
+#1214, pID 1214 opened survey three times, completing once (other will get removed during filtering of incompletes)
+#1061,pID 1061 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#1313, pID 1313 opened survey twice, completing once (other will get removed during filtering of incompletes)
+#1185, pID 1185 opened survey twice, completing once (other will get removed during filtering of incompletes)
+
+#========
+
+table(df_Cont$IDs_2) #all 1000s, except dummy 1999, check 1196
+#1196, part of cID 2098, looks like an accurate record of a repeat, will get cleaned by duration
+
+#========
+
+table(df_KM$IDs_2) # all 1000s, check 1407
+#1407, part of cID 2204 repeat, though that will be cleaned with duration--otherwise it's an accurate record
+
+#========
+
+table(df_Post$IDs_2) #all 1000s
+```
+
+
+Removing  meta-data columns common to all surveys
+```{r}
+df_Base <- select(df_Base,
+                  -(c(StartDate:Progress,
+                      RecordedDate:UserLanguage)))
+df_Cont <- select(df_Cont,
+                  -(c(StartDate:Progress,
+                      RecordedDate:UserLanguage)))
+df_KM <- select(df_KM,
+                  -(c(StartDate:Progress,
+                      RecordedDate:UserLanguage)))
+df_Post <- arrange(df_Post, IDs_2, StartDate) # arrange so that the df is by person, in order of their surveys (i.e top row is their first survey, 2nd row is the same person's second survey)
+df_Post <- select(df_Post,
+                  -(c(StartDate:Progress,
+                      RecordedDate:UserLanguage)))
+
+```
+
+
+```{r}
+#These codes are to label a time variable for the post discussion before we delete that metadata
+
+#df_Post gets cleaned before this var addition. See later step.
+df_Base$Time <- "Base" 
+df_Cont$Time <- "Pre"
+df_KM$Time <- "Pre"
+```
+
+ID Variable Renaming
+```{r}
+df_Base <- rename(df_Base,
+       cID = IDs_1,
+       pID = IDs_2,
+       Rel_LengthY = "Relationship Length_1",
+       Rel_LengthM = "Relationship Length_2")
+df_Cont <- rename(df_Cont,
+       cID = IDs_1,
+       pID = IDs_2)
+df_KM <- rename(df_KM,
+       cID = IDs_1,
+       pID = IDs_2)
+df_Post <- rename(df_Post,
+       cID = IDs_1,
+       pID = IDs_2)
+```
+
+
+
+
+## Handling the 2 Manipulation Surveys
+Doing some early, survey-specific cleaning now, so that once joined together we don't need to do more complicated transformations. E.g. if combined now, we would need to somehow record that 'too quick of a video' means something different for someone who saw 1 video vs the other, or how answering 1 attention check is wrong in 1 survey but correct for the other.
+
+THIS section may need some tweaking depending on how many fail/succeed attention checks--check the table() functions for whether you need to do more
+```{r}
+df_Cont$Condition <- "Control"
+df_KM$Condition <- "KM"
+
+df_Cont <- rename(df_Cont,
+       VidPage_Time = "Cont_Timer_Page Submit")
+df_KM <- rename(df_KM,
+       VidPage_Time = "KM_Timer_Page Submit")
+
+#Missing Var Creation--For logging removal of participants
+#Coding here order is in terms of order of importance. Most important is run last, i.e. attention check, since a participant's exclusion should be listed under the 'worst' offence (they could have multiple reasons for exclusion, this is to record the most important 'offense')
+df_Cont$missing <- NA
+df_KM$missing <- NA
+
+#Attention Checks (1 for video in pre-disc survey--only attention check across all surveys actually)
+table(df_Cont$AttCheck) #single level, all correctly Cont
+table(df_KM$AttCheck) #two level, 3 = KM, 2 = fake
+
+df_Cont$AttCheck <- ifelse(df_Cont$AttCheck == 7, "Pass", "Fail") #answer 7 is the correct answer on the survey
+df_Cont$missing[df_Cont$AttCheck == "Fail" | is.na(df_Cont$AttCheck)] <- "Failed Control Video Attention Check"
+
+df_KM$AttCheck <- ifelse(df_KM$AttCheck == 3, "Pass", "Fail") #answer 3 is the correct answer on the survey
+df_KM$missing[df_KM$AttCheck == "Fail" | is.na(df_KM$AttCheck)] <- "Failed/Missing KM Video Attention Check"
+
+#Timing
+df_Cont$missing[df_Cont$VidPage_Time < 201] <- "Quick Neutral Video"
+df_KM$missing[df_KM$VidPage_Time < 176] <- "Quick KM Video"
+```
+Now both manipulation surveys should have the same columns that we care about, AND now with specific labels for survey specific criteria (attention check passing selection and video length). Now we can join them.
+
+### Binding manipulation surveys
+
+```{r}
+df_Pre <- bind_rows(df_Cont, df_KM)
+```
+We can see from the NAs in the summary that 3 of the 4 new variables are the Time related vars (First click, last click, click count) from the alternative survey, then the Flow of objects is labeled as FL6 in one survey but FL12 in the other, hence the 4th added var when row binding them together. This means that all of the other 60 vars properly lined up and combined.
+
+## Survey by survey clean
+
+Baseline Survey
+```{r}
+df_Base$missing <- NA
+
+#Duration
+df_Base$missing[df_Base$`Duration (in seconds)` <= 100] <- "Sub 1.5 Min Completion"
+#Consent
+df_Base$missing[df_Base$Consent != 1 | is.na(df_Base$Consent)] <- "No Consent Confirmation"
+#Finished
+df_Base$missing[df_Base$Finished != 1 | is.na(df_Base$Finished)] <- "Did not Finish"
+
+#No attention checks in this survey to note
+
+table(df_Base$missing)
+
+Base_Survey_Missing <- df_Base %>% 
+  filter(!is.na(missing)) %>% relocate(cID, pID, missing)
+view(Base_Survey_Missing[ , c("pID", "missing")]) #33 entries to be removed. Lots of people opened, but did not complete, the baseline survey
+table(Base_Survey_Missing$missing, Base_Survey_Missing$pID) #actual ids to be removed (not false start entries)
+
+df_Base <- df_Base %>% 
+  filter(is.na(missing))
+
+#If wanting to removing these 'incomplete' couples 
+#df_Base <- anti_join(df_Base, Base_Survey_Missing, by = join_by(cID)), Dont want this since some couples who repeated/have a record of incompletion eventually DID complete the survey later with a full entry
+
+table(df_Base$cID) #just to check for repeats, check 2009, 2090, 2122, 
+#2009. only 1 partner completed baseline, did not continue
+#2090. only 1 partner completed baseline, did not continue
+#2122. only 1 partner completed baseline, did not continue
+table(df_Base$pID) #just to check for repeats
+
+#Baseline removes unfinished participant entries--note, this is not the same thing as removing participants themselves (many re-did the survey later with completion)
+```
+
+Pre-Discussion Surveys
+```{r}
+table(df_Pre$missing) #we already had some info from before merging the two datasets (8 missing). We'll see if those last through these other filters
+
+#Finished
+df_Pre$missing[df_Pre$Finished != 1 | is.na(df_Pre$Finished)] #all completes
+
+#Consent
+df_Pre$missing[df_Pre$Consent_1 != 1 | 
+         df_Pre$Consent_2 != 1 | 
+         df_Pre$Consent_3 != 1 | 
+         df_Pre$Consent_4 != 1 | 
+         df_Pre$Consent_5 != 1 | 
+         df_Pre$Consent_6 != 1 | 
+         df_Pre$Consent_7 != 1] <- "Incomplete Consent"
+
+Pre_Survey_Missing <- df_Pre %>% 
+  filter(!is.na(missing)) %>% relocate(cID, pID, missing)
+table(Pre_Survey_Missing$missing, Pre_Survey_Missing$pID) #2 incomplete consent rows, the other 6 are the actual missings
+
+df_Pre <- df_Pre %>% 
+  filter(is.na(missing))
+
+#If wanting to removing these 'incomplete' couples 
+#df_Pre <- anti_join(df_Pre, Pre_Survey_Missing, by = join_by(cID)). Again, might have had to do restarts so hold off here first
+
+table(df_Pre$cID) #check 2115, 2143, 2155--3 proper removals expected here
+table(df_Pre$pID)
+
+#Pre-discussion survey missingness suggests 8 row removals. 2 of which are from incompletes. 2 of which are from blaze-through surveys that were retaken (notice: 1196, 1407 were too fast one time, but also have proper completions in df_Pre), 1 of which is dummy test id (1999), leaving 3 actual removals--couples 2115 (due to 1230 failed att check), 2143 (due to 1286 failed att check), 2155 (due to 1310 too fast km vid)
+
+#I.E This is the code chunk where we lose not just rows, but 3 actual individuals that will downstream into the final dataset. Can remove their partners so that downstream has only complete couples. Alternatively, can rework code to keep these 3 individuals (and their partners) and deal with later.
+
+df_Pre <- df_Pre[df_Pre$cID != 2115 & df_Pre$cID != 2143 & df_Pre$cID != 2155,  ]
+
+```
+
+Post-Discussion Surveys
+```{r}
+df_Post$missing <- NA
+
+#Finished
+df_Post$missing[df_Post$Finished != 1 | is.na(df_Post$Finished)] <- "Did not Finish"
+
+#Duration
+df_Post$missing[df_Post$`Duration (in seconds)` <= 100] <- "Sub 1.5 Min Completion"
+
+table(df_Post$missing) #no missing from the post-surveys. This is good, since 304 obs/4rows per couple = 76, our final couple n
+#knowing this, we can add a time var here since we arranged the index by start date earlier
+df_Post$Time <- rep(c("Post1", "Post2"), length.out = nrow(df_Post))# create a variable labeling each row--this works right now and for as long as there are exactly 2 surveys per person--if there are uneven number, then this Time var needs to be more specific (e.g. checking times to check which survey came first or second)
+
+table(df_Post$pID)
+table(df_Post$cID)
+table(df_Post$pID, df_Post$Time) #just to check that each pID has 1 Post1 and 1 Post2
+```
+
+## Combining Baseline, Pre-, Post-Discussion Surveys
+
+Now we have cleaned, individual labeled datasets, we need two things to do before combining all 3.
+1) Match out repeated vars so that they overlap/stack properly (e.g. cID, pID, other vars that are repeated throughout)
+2) Contrast/Isolate out important vars we want to stand out for each survey (e.g. Duration on baseline should be different from Duration post-survey)
+
+Will likely want this as 'tall' as a possible for now, rather than wide. I.e. cID and pID will turn up multiple times, each corresponding to a new iteration. 
+
+#### 1) Matching
+for rbinding rows, we need to have our repeated variables labeled the exact same across all 3 surveys.
+Those repeated measures are:
+IOS: Across all 3
+PRQC: Baseline and Post-Discussion surveys
+SEP: Pre- and Post-Discussion surveys
+cID: All 3 (aligned already)
+pID: All 3 (aligned already)
+
+```{r}
+df_Base <- rename(df_Base,
+       IOS = "IOS_Base",
+       PRQC = "PRQC_Base_1")
+
+df_Post <- rename(df_Post,
+       IOS = "IOS_Post",
+       SEP_1 = "SEP_1",
+       SEP_2 = "SEP_2",
+       SEP_3 = "SEP_3",
+       SEP_4 = "SEP_4",
+       SEP_5 = "SEP_5",
+       PRQC = "PRQC_Post_1")
+df_Pre <- rename(df_Pre,
+       IOS = "IOS_Pre",
+       SEP_1 = "SEP_Pre_1",
+       SEP_2 = "SEP_Pre_2",
+       SEP_4 = "SEP_Pre_3") #pre-discussion survey had shorthand version of SEP, showing Items 1,2, and 4 from the full 5-item version that was shown in the post survey
+```
+
+
+
+
+#### 2) Contrasting Survey specific vars
+If combined without contrasting, it would be impossible to tell how long each participant spent on each survey since the duration var from each would get overlapped
+```{r}
+df_Base <- rename(df_Base,
+       Duration_Base = "Duration (in seconds)",
+       Consent_Base = "Consent",
+       Finished_Base = "Finished")
+
+df_Post <- rename(df_Post,
+       Duration_Post = "Duration (in seconds)",
+       Finished_Post = "Finished")
+df_Pre <- rename(df_Pre,
+       Duration_Pre = "Duration (in seconds)",
+       Finished_Pre = "Finished")
+```
+
+
+```{r}
+#Final N was 76
+
+#Eye of Needle Filtering--Who makes it through all 3 survey phases?
+Clean_Couples <- inner_join(df_Base[c("cID", "pID")], df_Pre[c("cID", "pID")],df_Post[c("cID", "pID")], by = join_by(cID, pID))
+table(Clean_Couples$cID)
+Removed_Entries <- anti_join(df_Base[c("cID", "pID")], df_Pre[c("cID", "pID")],df_Post[c("cID", "pID")], by = join_by(cID, pID))
+table(Removed_Entries$cID)
+#2009, incomplete couple baseline (filtered during inner_join)
+#2011, complete couple baseline but did not proceed further (filtered during inner_join)
+#2013, complete couple baseline but did not proceed further (filtered during inner_join)
+#2017, complete couple baseline but did not proceed further (filtered during inner_join)
+#2090, incomplete couple did not proceed past baseline (filtered during inner_join)
+#2092, complete couple baseline but did not proceed further (filtered during inner_join)
+#2094, complete couple baseline but did not proceed further (filtered during inner_join)
+#2115, 1230 failed KM Vid Att Check (Pre Discussion Missing)
+#2122, incomplete couple did not proceed past baseline (filtered during inner_join)
+#2143, 1286 missed KM Vid Att Check (Pre_Survey Missing)
+#2155, 1310 too quick KM Video (Pre_Survey Missing)
+#2157, 1313 did not finish (Base_Survey Missing) AND completed couple baseline but did not proceed further (filtered during inner_join)
+
+```
+
+Isolating the 73 complete couples to combine
+```{r}
+df_Base <- inner_join(df_Base, Clean_Couples, by = c("pID", "cID"))
+df_Pre <- inner_join(df_Pre, Clean_Couples, by = c("pID", "cID"))
+df_Post<- inner_join(df_Post, Clean_Couples, by = c("pID", "cID"))
+
+sort(unique(df_Base$pID))  == sort(unique(df_Pre$pID)) #checking alignment of participants in all dfs
+sort(unique(df_Base$pID)) == sort(unique(df_Post$pID))
+#All 3 databases have the same individuals--only individuals from complete couples, who did all sessions, with their complete data, and had no sketchiness (e.g failed attention checks or too quick on video page)
+
+
+```
+
+It'd also be nice to have some time invariant vars from the baseline reflected in the other surveys (if more are wanted, this is probably a good place to enter those in; e.g. attachment, mindfulness). I'm just pulling demographic vars for now
+
+```{r}
+df_Pre <- df_Base %>% 
+  select(c(cID, pID, Gender:`Relationship Status`)) %>% 
+  right_join(., df_Pre, by = c("cID", "pID"))
+
+df_Post <- df_Base %>% 
+  select(c(cID, pID, Gender:`Relationship Status`)) %>% 
+  right_join(., df_Post, by = c("cID", "pID"))
+#as sanity check, df_Post and df_Pre did NOT gain rows from this join--only gained columns (which is exactly what it should be)
+
+#might be helpful to see condition in the post_survey as well
+df_Post <- df_Pre %>% 
+  select(c(cID, pID, Condition)) %>% 
+  right_join(., df_Post, by = c("cID", "pID"))
+```
+Now we have three datasets, 1 for the baseline, 1 for the pre-discussion survey, and 1 for the post-discussion surveys.
+
+
+```{r}
+#To create a complete, longform (i.e. with time) dataframe
+df <- bind_rows(df_Base, df_Pre, df_Post)
+df <- df %>% 
+  relocate(cID, pID, Condition, missing,Finished_Base, Finished_Pre, Finished_Post, Duration_Base, Duration_Pre, Duration_Post) %>%
+  arrange(cID)
+```
+
+So we have a final df with 584 rows, meaing 73 complete couples (584/2 per couple baseline/2 per couple prediscussion/4 per couple postdiscussion = 73). 3 couples were removed total: cID 2115 (b/c 1230 failed KM Vid Att Check), cID 2143 (b/c 1286 missed KM Vid Att Check), and cID 2155 (1310 too quick KM Video Pre_Survey Missing)
