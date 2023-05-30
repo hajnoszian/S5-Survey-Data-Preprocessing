@@ -462,4 +462,4 @@ df <- df %>%
   arrange(cID)
 ```
 
-So we have a final df with 584 rows, meaing 73 complete couples (584/2 per couple baseline/2 per couple prediscussion/4 per couple postdiscussion = 73). 3 couples were removed total: cID 2115 (b/c 1230 failed KM Vid Att Check), cID 2143 (b/c 1286 missed KM Vid Att Check), and cID 2155 (1310 too quick KM Video Pre_Survey Missing)
+So we have a final df with 584 rows, meaning 73 complete couples (584/2 per couple baseline/2 per couple prediscussion/4 per couple postdiscussion = 73). 3 couples were removed total: cID 2115 (b/c 1230 failed KM Vid Att Check), cID 2143 (b/c 1286 missed KM Vid Att Check), and cID 2155 (1310 too quick KM Video Pre_Survey Missing)
